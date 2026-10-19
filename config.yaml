@@ -12,3 +12,6 @@ tsne_perplexity: 30
 pca_precomponents: 50
 kpca_gamma: 0.02
 froc_thresholds: 101
+# UMAP settings
+umap_neighbors: 15
+umap_min_dist: 0.1
