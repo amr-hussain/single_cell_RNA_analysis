@@ -1,0 +1,14 @@
+random_seed: 42
+train_per_class: 500
+test_per_class: 200
+embedding_dimensions: 2
+classifier_neighbors: 7
+repeats: 5
+bootstrap_auc_repeats: 200
+sne_iterations: 500
+sne_perplexity: 30
+tsne_iterations: 1000
+tsne_perplexity: 30
+pca_precomponents: 50
+kpca_gamma: 0.02
+froc_thresholds: 101
