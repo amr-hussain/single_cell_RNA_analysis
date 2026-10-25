@@ -3,9 +3,14 @@ from scipy.spatial.distance import pdist, squareform
 
 
 class GaussianSNE:
-    """Educational exact SNE using symmetric Gaussian affinities and gradient descent."""
+    """Educational exact SNE using symmetric Gaussian affinities and gradient descent.
 
-    def __init__(self, n_components=2, perplexity=30, n_iter=500, learning_rate=100, random_state=42):
+    Unlike t-SNE, the low-dimensional similarities Q are Gaussian too (not Student-t),
+    which makes SNE suffer from the "crowding problem". It is O(n²) per iteration
+    and cannot embed new points (no transform), so it is used transductively.
+    """
+
+    def __init__(self, n_components=2, perplexity=30, n_iter=500, learning_rate='auto', random_state=42):
         self.n_components = n_components
         self.perplexity = perplexity
         self.n_iter = n_iter
@@ -18,6 +23,7 @@ class GaussianSNE:
         P = np.zeros((n, n))
         target = np.log(self.perplexity)
 
+        # Binary-search a per-point bandwidth beta_i so each row's entropy matches log(perplexity).
         for i in range(n):
             lo, hi = -20.0, 20.0
             for _ in range(40):
@@ -37,8 +43,10 @@ class GaussianSNE:
 
     def fit_transform(self, X):
         P = self._probabilities(X)
+        n = len(X)
+        lr = max(n / 12.0, 50.0) if self.learning_rate == 'auto' else self.learning_rate
         rng = np.random.default_rng(self.random_state)
-        Y = rng.normal(0, 1e-4, (len(X), self.n_components))
+        Y = rng.normal(0, 1e-4, (n, self.n_components))
         velocity = np.zeros_like(Y)
         self.loss_curve_ = []
 
@@ -49,12 +57,12 @@ class GaussianSNE:
             Q /= Q.sum() + 1e-12
             Q = np.maximum(Q, 1e-12)
 
-            grad = np.zeros_like(Y)
-            for i in range(len(Y)):
-                grad[i] = 4 * np.sum(((P[i] - Q[i])[:, None]) * (Y[i] - Y), axis=0)
+            # grad_i = 4 Σ_j (p_ij − q_ij)(y_i − y_j), written as matrix products.
+            W = P - Q
+            grad = 4 * (W.sum(axis=1)[:, None] * Y - W @ Y)
 
             momentum = 0.5 if it < 100 else 0.8
-            velocity = momentum * velocity - self.learning_rate * grad
+            velocity = momentum * velocity - lr * grad
             Y += velocity
             Y -= Y.mean(0)
 

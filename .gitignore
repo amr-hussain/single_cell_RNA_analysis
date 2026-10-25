@@ -1,5 +1,5 @@
 .venv/
 outputs/
-report/
 __pycache__/
-src/report.py
+data/
+.ipynb_checkpoints/

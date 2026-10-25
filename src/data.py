@@ -1,83 +1,128 @@
+"""Dataset loaders.
+
+Every loader returns an AnnData plus the name of the label column. `load_dataset`
+then turns it into plain numpy arrays. To add a dataset, write a loader and
+register it in LOADERS; then change `dataset:` in config.yaml.
+"""
+from dataclasses import dataclass
 from pathlib import Path
-import os
-import gzip
-import struct
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
-
-CLASS_NAMES = [
-    'T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat',
-    'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot'
-]
+import scipy.sparse as sp
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import FunctionTransformer, StandardScaler
 
 
-def _idx_images(path):
-    with gzip.open(path, 'rb') as f:
-        magic, n, r, c = struct.unpack('>IIII', f.read(16))
-        if magic != 2051:
-            raise ValueError(f'Bad image IDX magic in {path}')
-        return np.frombuffer(f.read(), dtype=np.uint8).reshape(n, r * c)
+def _dense(M):
+    return np.asarray(M.toarray() if sp.issparse(M) else M, dtype=np.float32)
 
 
-def _idx_labels(path):
-    with gzip.open(path, 'rb') as f:
-        magic, n = struct.unpack('>II', f.read(8))
-        if magic != 2049:
-            raise ValueError(f'Bad label IDX magic in {path}')
-        return np.frombuffer(f.read(), dtype=np.uint8)
+def _pbmc3k(sc):
+    # 2638 PBMCs, already filtered/normalised/log1p/scaled; .raw = log-normalised.
+    return sc.datasets.pbmc3k_processed(), 'louvain'
 
 
-def _find(root, names):
-    for name in names:
-        hits = list(Path(root).rglob(name))
-        if hits:
-            return hits[0]
-    return None
+def _pbmc68k(sc):
+    # 700-cell subsample of 68k PBMCs, labels from FACS-sorted bulk populations.
+    return sc.datasets.pbmc68k_reduced(), 'bulk_labels'
 
 
-def load_fashion_mnist(root='data'):
-    roots = [Path(root), Path(os.getenv('FASHION_MNIST_DIR', ''))]
-    for base in roots:
-        if not str(base):
-            continue
-        tr = _find(base, ['fashion-mnist_train.csv', 'fashion-mnist_train.csv.gz'])
-        te = _find(base, ['fashion-mnist_test.csv', 'fashion-mnist_test.csv.gz'])
-        if tr and te:
-            a = pd.read_csv(tr)
-            b = pd.read_csv(te)
-            return (
-                a.iloc[:, 1:].to_numpy(np.float32),
-                a.iloc[:, 0].to_numpy(),
-                b.iloc[:, 1:].to_numpy(np.float32),
-                b.iloc[:, 0].to_numpy(),
-            )
-        ti = _find(base, ['train-images-idx3-ubyte.gz'])
-        tl = _find(base, ['train-labels-idx1-ubyte.gz'])
-        vi = _find(base, ['t10k-images-idx3-ubyte.gz'])
-        vl = _find(base, ['t10k-labels-idx1-ubyte.gz'])
-        if all([ti, tl, vi, vl]):
-            return _idx_images(ti), _idx_labels(tl), _idx_images(vi), _idx_labels(vl)
-    import kagglehub
-    path = kagglehub.dataset_download('zalando-research/fashionmnist')
-    return load_fashion_mnist(path)
+def _paul15(sc):
+    # Mouse myeloid progenitors: raw counts → we do the standard preprocessing here.
+    adata = sc.datasets.paul15()
+    adata.raw = None
+    sc.pp.normalize_total(adata, target_sum=1e4)
+    sc.pp.log1p(adata)
+    adata.raw = adata
+    sc.pp.highly_variable_genes(adata, n_top_genes=1000)
+    adata = adata[:, adata.var['highly_variable']].copy()
+    return adata, 'paul15_clusters'
 
 
-def balanced_sample(X, y, per_class, seed):
+LOADERS = {
+    'pbmc3k_processed': _pbmc3k,
+    'pbmc68k_reduced': _pbmc68k,
+    'paul15': _paul15,
+}
+
+
+@dataclass
+class Dataset:
+    X: np.ndarray            # cells × genes, float32
+    y: np.ndarray            # integer-encoded labels
+    class_names: list
+    gene_names: np.ndarray
+    name: str
+    feature_source: str
+
+
+def stratified_subsample(y, n, min_per_class, seed):
+    """Indices of a stratified subsample of ~n cells, keeping rare classes ≥ min_per_class."""
     rng = np.random.default_rng(seed)
     ids = []
     for c in np.unique(y):
-        ids.extend(rng.choice(np.flatnonzero(y == c), min(per_class, (y == c).sum()), replace=False))
-    ids = np.array(ids)
-    rng.shuffle(ids)
-    return X[ids].astype(np.float32) / 255.0, y[ids]
+        members = np.flatnonzero(y == c)
+        take = max(int(round(n * len(members) / len(y))), min_per_class)
+        ids.extend(rng.choice(members, min(take, len(members)), replace=False))
+    return np.sort(np.array(ids))
 
 
-def benchmark_sample(root, train_per_class, test_per_class, seed):
-    Xtr, ytr, Xte, yte = load_fashion_mnist(root)
-    Xtr, ytr = balanced_sample(Xtr, ytr, train_per_class, seed)
-    Xte, yte = balanced_sample(Xte, yte, test_per_class, seed + 1)
-    X = np.vstack([Xtr, Xte])
-    y = np.r_[ytr, yte]
-    train_mask = np.arange(len(X)) < len(Xtr)
-    return X, y, train_mask
+def load_dataset(cfg):
+    import scanpy as sc
+    sc.settings.datasetdir = Path(cfg['root']) / cfg.get('data_dir', 'data')
+    sc.settings.verbosity = 0
+
+    name = cfg['dataset']
+    if name not in LOADERS:
+        raise ValueError(f"Unknown dataset '{name}'. Choose from {list(LOADERS)}")
+    adata, label_key = LOADERS[name](sc)
+
+    source = cfg.get('feature_source', 'lognorm_hvg')
+    if source == 'lognorm_hvg' and adata.raw is not None:
+        X = _dense(adata.raw[:, adata.var_names].X)
+    else:
+        X = _dense(adata.X)
+
+    labels = pd.Categorical(adata.obs[label_key])
+    y = labels.codes.astype(int)
+    genes = np.asarray(adata.var_names)
+
+    if cfg.get('subsample_cells'):
+        ids = stratified_subsample(y, cfg['subsample_cells'], cfg.get('min_cells_per_class', 10), cfg['seed'])
+        X, y = X[ids], y[ids]
+
+    # Genes that are constant in the (sub)sample carry no information and break F-tests.
+    keep = X.std(axis=0) > 0
+    return Dataset(X[:, keep], y, list(labels.categories), genes[keep], name, source)
+
+
+def make_scaler(cfg):
+    """z-score each gene, then clip at ±clip_value (as scanpy's sc.pp.scale(max_value=10)).
+
+    Without clipping, a gene expressed in only a few cells gets huge z-scores and
+    those few cells dominate distances and variance.
+    """
+    clip = cfg.get('clip_value')
+    steps = [('zscore', StandardScaler())]
+    if clip:
+        steps.append(('clip', FunctionTransformer(np.clip, kw_args=dict(a_min=-clip, a_max=clip))))
+    return Pipeline(steps)
+
+
+def summarize(ds):
+    counts = pd.Series(np.bincount(ds.y, minlength=len(ds.class_names)), index=ds.class_names)
+    counts = counts.sort_values(ascending=False)
+    ratio = counts.max() / max(counts.min(), 1)
+    return {
+        'cells': len(ds.y),
+        'genes': ds.X.shape[1],
+        'classes': len(ds.class_names),
+        'counts': counts,
+        'imbalance_ratio': ratio,
+        'note': (
+            f'Largest class is {ratio:.1f}× the smallest. '
+            + ('This is strongly imbalanced, so macro-averaged metrics (every class '
+               'weighs the same) are more honest than plain accuracy.' if ratio > 5 else
+               'Moderate imbalance; still report macro metrics alongside accuracy.')
+        ),
+    }

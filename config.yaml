@@ -1,17 +1,107 @@
-random_seed: 42
-train_per_class: 500
-test_per_class: 200
-embedding_dimensions: 2
-classifier_neighbors: 7
-repeats: 5
-bootstrap_auc_repeats: 200
-sne_iterations: 500
-sne_perplexity: 30
-tsne_iterations: 1000
-tsne_perplexity: 30
-pca_precomponents: 50
-kpca_gamma: 0.02
-froc_thresholds: 101
-# UMAP settings
-umap_neighbors: 15
-umap_min_dist: 0.1
+# ─────────────────────────────────────────────────────────────────────────────
+# scRNA-seq dimensionality reduction & feature selection tutorial — settings
+# Everything the pipeline does is controlled from here.
+# `python run_pipeline.py --fast` applies the `fast:` block on top of these.
+# ─────────────────────────────────────────────────────────────────────────────
+
+seed: 42
+
+# --- Data -------------------------------------------------------------------
+# Swap the dataset by changing this one line:
+#   pbmc3k_processed  (2638 cells, 8 cell types — easy)
+#   pbmc68k_reduced   (700 cells, 10 bulk-sorted types — harder, noisier labels)
+#   paul15            (2730 cells, 19 myeloid progenitor clusters — a continuum)
+dataset: pbmc3k_processed
+# lognorm_hvg : log-normalised, UNSCALED expression of the highly variable genes
+#               (scaling happens inside each CV training fold → no leakage)
+# processed_X : the pre-scaled matrix exactly as scanpy ships it
+feature_source: lognorm_hvg
+subsample_cells: null          # null = use all cells; an int = stratified subsample
+min_cells_per_class: 10        # rare classes are kept at least this big when subsampling
+clip_value: 10                 # after z-scoring, clip to ±10 (scanpy default); null = no clipping
+data_dir: data                 # where scanpy caches downloaded datasets
+
+# --- Cross-validation -------------------------------------------------------
+cv:
+  folds: 5
+  repeats: 3                   # each repeat reshuffles with seed + repeat
+
+# --- Classifiers (shared by baseline, Part A, Part B) ----------------------
+classifiers:
+  kNN: {n_neighbors: 7, weights: distance}
+  SVM: {C: 10, gamma: scale, probability: true}   # probability=True → ROC AUC (costs extra CPU)
+  RF:  {n_estimators: 100, n_jobs: -1}
+
+# --- Part A: dimensionality reduction --------------------------------------
+partA:
+  methods: [PCA, Kernel PCA, SNE, t-SNE, MDS, Isomap, UMAP]
+  dims: [2, 5, 10, 20, 50]
+  pca_pre_dims: 50             # PCA pre-step for t-SNE, SNE, MDS, Isomap, UMAP
+  tsne_high_dim: exact         # dims > 3: 'exact' (slow but correct) or 'skip'
+  sne_max_dim: 50              # custom SNE skips dims above this
+  quality_k: 10                # neighbourhood size for trustworthiness/continuity
+  quality_max_cells: 1500      # cap for the O(n²) quality metrics
+
+# --- Method hyper-parameters ------------------------------------------------
+hyper:
+  kpca_kernel: rbf
+  kpca_gamma: null             # null → 1 / n_features
+  sne_perplexity: 30
+  sne_iterations: 500
+  sne_learning_rate: auto      # auto → max(n / 12, 50), like sklearn's t-SNE
+  tsne_perplexity: 30
+  tsne_iterations: 1000
+  mds_max_iter: 300
+  mds_n_init: 1
+  isomap_neighbors: 15
+  umap_neighbors: 15
+  umap_min_dist: 0.1
+
+# --- Part B: feature selection ----------------------------------------------
+partB:
+  methods: [Variance Threshold, ANOVA F-test, Mutual Information, Fisher Score, Lasso (L1)]
+  k_values: [10, 25, 50, 100, 200]
+  lasso_C: 0.1                 # smaller C → stronger L1 penalty → sparser
+  top_n_genes: 20              # how many genes to list per method
+  overlap_k: 50                # gene-set size for method-agreement Jaccard
+  bootstrap: 10                # resamples for the stability check
+  stability_k: 50
+
+# --- Part C: 2D visualisation ----------------------------------------------
+partC:
+  methods: [PCA, Kernel PCA, SNE, t-SNE, MDS, Isomap, UMAP]
+  fs_methods: [ANOVA F-test, Fisher Score, Mutual Information, Variance Threshold]
+
+# --- Output -----------------------------------------------------------------
+dpi: 150
+outputs:
+  tables: outputs/tables
+  figures: outputs/figures
+
+# --- Fast mode overrides (python run_pipeline.py --fast) --------------------
+fast:
+  subsample_cells: 800
+  cv: {repeats: 1}
+  partA:
+    dims: [2, 10]
+    tsne_high_dim: skip
+    quality_max_cells: 800
+  hyper:
+    sne_iterations: 300
+    tsne_iterations: 500
+    mds_max_iter: 100
+  partB:
+    k_values: [10, 50]
+    bootstrap: 3
+
+# --- Canonical PBMC marker genes (Seurat/scanpy PBMC3k tutorials) -----------
+# Used only to annotate which selected genes are known cell-type markers.
+markers:
+  T cells:            [CD3D, CD3E, IL7R, CCR7]
+  CD8 T cells:        [CD8A, CD8B]
+  B cells:            [MS4A1, CD79A, CD79B]
+  NK cells:           [NKG7, GNLY, GZMB]
+  CD14+ Monocytes:    [CD14, LYZ, S100A8, S100A9]
+  FCGR3A+ Monocytes:  [FCGR3A, MS4A7]
+  Dendritic cells:    [FCER1A, CST3]
+  Megakaryocytes:     [PPBP, PF4]
