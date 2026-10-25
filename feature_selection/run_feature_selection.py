@@ -173,20 +173,39 @@ def evaluate_pipeline(X_train, X_test, y_train, y_test, clf_name, clf):
 
 def plot_comparison_heatmap(df, metric, output_dir):
     """Heatmap: feature selection method × classifier for a given metric."""
-    pivot = df.pivot_table(index='Feature Selection', columns='Classifier',
-                           values=metric, aggfunc='mean')
+    pivot = df.pivot_table(
+        index='Feature Selection',
+        columns='Classifier',
+        values=metric,
+        aggfunc='mean',
+    )
     # Consistent ordering
-    fs_order = ['No Selection (Baseline)', 'Variance Threshold',
-                'ANOVA F-test', 'Mutual Information', 'Fisher Score']
+    fs_order = [
+        'No Selection (Baseline)',
+        'Variance Threshold',
+        'ANOVA F-test',
+        'Mutual Information',
+        'Fisher Score',
+    ]
     clf_order = ['KNN', 'SVM', 'Random Forest']
-    pivot = pivot.reindex(index=[f for f in fs_order if f in pivot.index],
-                          columns=[c for c in clf_order if c in pivot.columns])
+    pivot = pivot.reindex(
+        index=[f for f in fs_order if f in pivot.index],
+        columns=[c for c in clf_order if c in pivot.columns],
+    )
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    sns.heatmap(pivot, annot=True, fmt='.4f', cmap='YlGnBu', ax=ax,
-                linewidths=0.5, linecolor='white')
+    sns.heatmap(
+        pivot,
+        annot=True,
+        fmt='.4f',
+        cmap='YlGnBu',
+        ax=ax,
+        linewidths=0.5,
+        linecolor='white',
+    )
     ax.set_title(f'{metric} — Feature Selection × Classifier', fontsize=14)
-    ax.set_xlabel(''); ax.set_ylabel('')
+    ax.set_xlabel('')
+    ax.set_ylabel('')
     plt.tight_layout()
     slug = metric.lower().replace(' ', '_').replace('(', '').replace(')', '')
     plt.savefig(output_dir / f'fs_heatmap_{slug}.png', dpi=180)
@@ -195,18 +214,33 @@ def plot_comparison_heatmap(df, metric, output_dir):
 
 def plot_grouped_bars(df, metric, output_dir):
     """Grouped bar chart comparing classifiers across feature selection methods."""
-    fs_order = ['No Selection (Baseline)', 'Variance Threshold',
-                'ANOVA F-test', 'Mutual Information', 'Fisher Score']
+    fs_order = [
+        'No Selection (Baseline)',
+        'Variance Threshold',
+        'ANOVA F-test',
+        'Mutual Information',
+        'Fisher Score',
+    ]
     df_plot = df[df['Feature Selection'].isin(fs_order)].copy()
     df_plot['Feature Selection'] = pd.Categorical(
         df_plot['Feature Selection'], categories=fs_order, ordered=True
     )
 
     fig, ax = plt.subplots(figsize=(14, 7))
-    sns.barplot(data=df_plot, x='Feature Selection', y=metric,
-                hue='Classifier', ax=ax, palette='viridis', edgecolor='black')
-    ax.set_title(f'{metric} by Feature Selection Method & Classifier',
-                 fontsize=14, fontweight='bold')
+    sns.barplot(
+        data=df_plot,
+        x='Feature Selection',
+        y=metric,
+        hue='Classifier',
+        ax=ax,
+        palette='viridis',
+        edgecolor='black',
+    )
+    ax.set_title(
+        f'{metric} by Feature Selection Method & Classifier',
+        fontsize=14,
+        fontweight='bold',
+    )
     ax.set_xlabel('')
     ax.set_xticklabels(ax.get_xticklabels(), rotation=15, ha='right')
     ax.legend(title='Classifier', loc='upper right')
@@ -224,8 +258,12 @@ def plot_radar(df, output_dir):
     colors = plt.cm.viridis(np.linspace(0.2, 0.8, len(clfs)))
 
     n_methods = len(fs_methods)
-    fig, axes = plt.subplots(1, n_methods, figsize=(5 * n_methods, 5),
-                             subplot_kw=dict(polar=True))
+    fig, axes = plt.subplots(
+        1,
+        n_methods,
+        figsize=(5 * n_methods, 5),
+        subplot_kw=dict(polar=True),
+    )
     if n_methods == 1:
         axes = [axes]
 
@@ -254,10 +292,20 @@ def plot_radar(df, output_dir):
 def plot_training_time(df, output_dir):
     """Bar chart of training time."""
     fig, ax = plt.subplots(figsize=(14, 7))
-    sns.barplot(data=df, x='Feature Selection', y='Training Time (s)',
-                hue='Classifier', ax=ax, palette='magma', edgecolor='black')
-    ax.set_title('Training Time by Feature Selection × Classifier on Core I5 11300h',
-                 fontsize=14, fontweight='bold')
+    sns.barplot(
+        data=df,
+        x='Feature Selection',
+        y='Training Time (s)',
+        hue='Classifier',
+        ax=ax,
+        palette='magma',
+        edgecolor='black',
+    )
+    ax.set_title(
+        'Training Time by Feature Selection × Classifier on Core I5 11300h',
+        fontsize=14,
+        fontweight='bold',
+    )
     ax.set_xlabel('')
     ax.set_xticklabels(ax.get_xticklabels(), rotation=15, ha='right')
     ax.legend(title='Classifier')
@@ -269,10 +317,21 @@ def plot_training_time(df, output_dir):
 def plot_prediction_time(df, output_dir):
     """Bar chart of prediction / inference time."""
     fig, ax = plt.subplots(figsize=(14, 7))
-    sns.barplot(data=df, x='Feature Selection', y='Prediction Time (s)',
-                hue='Classifier', ax=ax, palette='viridis', edgecolor='black')
-    ax.set_title('Prediction Time by Feature Selection × Classifier on Core I5 11300h',
-                 fontsize=14, fontweight='bold')
+    sns.barplot(
+        data=df,
+        x='Feature Selection',
+        y='Prediction Time (s)',
+        hue='Classifier',
+        ax=ax,
+        palette='viridis',
+        edgecolor='black',
+    )
+    ax.set_title(
+        'Prediction Time by Feature Selection × Classifier on Core I5 11300h',
+        fontsize=14,
+        fontweight='bold',
+    )
+
     ax.set_xlabel('')
     ax.set_xticklabels(ax.get_xticklabels(), rotation=15, ha='right')
     ax.legend(title='Classifier')
@@ -343,16 +402,26 @@ def plot_selected_pixels(X_train, y_train, output_dir, k=100):
         [var_mask, anova_mask, mi_mask, fisher_mask],
         ['Variance Threshold', 'ANOVA F-test', 'Mutual Information', 'Fisher Score']
     ):
-        ax.imshow(mask.reshape(img_side, img_side), cmap='hot',
-                  interpolation='nearest')
+        ax.imshow(
+            mask.reshape(img_side, img_side),
+            cmap='hot',
+            interpolation='nearest',
+        )
         ax.set_title(title, fontsize=11, fontweight='bold')
         ax.axis('off')
 
-    plt.suptitle(f'Top {k} Selected Pixels by Each Method', fontsize=14,
-                 fontweight='bold', y=1.02)
+    plt.suptitle(
+        f'Top {k} Selected Pixels by Each Method',
+        fontsize=14,
+        fontweight='bold',
+        y=1.02,
+    )
     plt.tight_layout()
-    plt.savefig(output_dir / 'fs_selected_pixels.png', dpi=180,
-                bbox_inches='tight')
+    plt.savefig(
+        output_dir / 'fs_selected_pixels.png',
+        dpi=180,
+        bbox_inches='tight',
+    )
     plt.close()
 
 
@@ -434,10 +503,13 @@ def main():
             metrics['Classifier'] = clf_name
             metrics['Num Features'] = n_sel
             results.append(metrics)
-            print(f"    {clf_name:15s}  Acc={metrics['Accuracy']:.4f}  "
-                  f"F1={metrics['F1 Score']:.4f}  "
-                  f"TrainTime={metrics['Training Time (s)']:.3f}s  "
-                  f"PredTime={metrics['Prediction Time (s)']:.3f}s")
+            log_msg = (
+                f"    {clf_name:15s}  Acc={metrics['Accuracy']:.4f}  "
+                f"F1={metrics['F1 Score']:.4f}  "
+                f"TrainTime={metrics['Training Time (s)']:.3f}s  "
+                f"PredTime={metrics['Prediction Time (s)']:.3f}s"
+            )
+            print(log_msg)
 
     df = pd.DataFrame(results)
 
@@ -457,9 +529,11 @@ def main():
     print(df[display_cols].to_string(index=False))
 
     # Best combination
-    best = df.loc[df['Accuracy'].idxmax()]
-    print(f"\n  ★ Best Accuracy: {best['Accuracy']:.4f} — "
-          f"{best['Classifier']} with {best['Feature Selection']}")
+    best_msg = (
+        f"\n  ★ Best Accuracy: {best['Accuracy']:.4f} — "
+        f"{best['Classifier']} with {best['Feature Selection']}"
+    )
+    print(best_msg)
 
     # Generate visualizations
     print(f"\n[4/5] Generating plots...")
