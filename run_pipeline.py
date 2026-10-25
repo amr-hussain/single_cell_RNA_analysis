@@ -8,6 +8,9 @@ import argparse
 import logging
 import time
 
+import matplotlib
+matplotlib.use('Agg')   # no windows: figures are only saved to files (the notebook keeps its inline backend)
+
 from src.config import load_config, set_seed
 from src.cv import make_splits
 from src.data import load_dataset

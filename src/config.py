@@ -24,7 +24,7 @@ def load_config(path='config.yaml', fast=False):
     cfg['fast_mode'] = fast
     cfg['root'] = Path(path).resolve().parent
     for key in ('tables', 'figures'):
-        p = cfg['root'] / cfg['outputs'][key]
+        p = cfg['root'] / cfg['outputs'][key].format(mode='fast' if fast else 'full')
         p.mkdir(parents=True, exist_ok=True)
         cfg[f'{key}_dir'] = p
     return cfg

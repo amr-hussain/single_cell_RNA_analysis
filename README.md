@@ -73,7 +73,7 @@ src/
 
 ## Output files
 
-All tables are in `outputs/tables/` and all figures (150 dpi PNG) in `outputs/figures/`.
+Each mode writes to its own folder, so a fast run never overwrites full results: `outputs/full/` (`python run_pipeline.py`, or the notebook with `FAST = False`) and `outputs/fast/` (`--fast`, or the notebook's default). Inside each, tables are in `tables/` and figures (150 dpi PNG) in `figures/`; the paths below are relative to that folder.
 
 ### Data & baseline
 | File | Contents |

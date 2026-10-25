@@ -94,11 +94,24 @@ def run_baseline(ds, cfg, splits=None):
 
 # ── Part A: dimensionality reduction ─────────────────────────────────────────
 
+def quality_reference(X, cfg):
+    """The space whose neighbourhoods count as 'true' for trustworthiness & co.
+
+    'lognorm' (default) uses the input genes as they are. 'scaled' z-scores them first,
+    but that gives every one of ~1,800 sparse genes equal weight, so neighbourhoods
+    become mostly noise (k-NN gets ~0.6 accuracy there) and every embedding scores
+    close to a random one.
+    """
+    if cfg['partA'].get('quality_reference', 'lognorm') == 'scaled':
+        return make_scaler(cfg).fit_transform(X)
+    return X
+
+
 def run_partA(ds, cfg, base, splits=None):
     splits = splits or make_splits(ds.y, cfg)
     X, y = ds.X, ds.y
     classes = np.arange(len(ds.class_names))
-    Xref = make_scaler(cfg).fit_transform(X)       # reference space for quality metrics only
+    Xref = quality_reference(X, cfg)               # reference space for quality metrics only
     a = cfg['partA']
     rows, qrows, issues = [], [], []
 
@@ -311,7 +324,7 @@ def run_partC(ds, cfg, precomputed=None):
     """2D maps from every reducer, plus 2-gene maps from feature selection."""
     precomputed = precomputed or {}
     X, y = ds.X, ds.y
-    Xref = make_scaler(cfg).fit_transform(X)
+    Xref = quality_reference(X, cfg)
     rows, panels = [], []
     for method in cfg['partC']['methods']:
         log.info('Part C: %s → 2D', method)

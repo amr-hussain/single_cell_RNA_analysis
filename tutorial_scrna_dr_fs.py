@@ -8,7 +8,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.19.6
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: Python 3 (ipykernel)
 #     language: python
 #     name: python3
 # ---
@@ -58,7 +58,7 @@ warnings.filterwarnings('ignore')
 pd.set_option('display.precision', 3)
 
 def show(name):
-    """Display a figure that the pipeline saved to outputs/figures/."""
+    """Display a figure that the pipeline saved to outputs/<mode>/figures/."""
     display(Image(filename=str(FIG / name)))
 
 print('FAST mode' if FAST else 'FULL mode', '| dataset:', cfg['dataset'])
@@ -81,13 +81,14 @@ print('FAST mode' if FAST else 'FULL mode', '| dataset:', cfg['dataset'])
 # %%
 # Load the dataset named in config.yaml (one line to swap datasets).
 ds = load_dataset(cfg)
+
 print(f'X: {ds.X.shape[0]} cells × {ds.X.shape[1]} genes   (dtype {ds.X.dtype})')
 print('Cell types:', ds.class_names)
 
 # Summary table + bar chart of cells per type (saved to outputs/).
 summary = run_data_summary(ds, cfg)
 print(summary['note'])
-show('data_class_counts.png')
+# show('data_class_counts.png')
 
 # %% [markdown]
 # **How to read this graph.** Each bar is one cell type and its length is the number of cells. CD4 T cells dominate, while dendritic cells and megakaryocytes are tiny. That **class imbalance** matters: a lazy model that always answers "CD4 T cell" would already get ~43 % accuracy. We therefore also report **macro**-averaged precision, recall and F1, which give every cell type equal weight, so mistakes on the rare types are not drowned out. We also use **stratified** folds, so every fold keeps these proportions.
@@ -117,7 +118,10 @@ axes[0].set(title='Log-normalised (what we use)', xlabel='Gene variance', ylabel
 axes[1].hist(scaled_X.var(axis=0), bins=60, color=plots.CAT[1])
 axes[1].set(title='After z-scoring (scanpy .X)', xlabel='Gene variance')
 fig.suptitle('Gene variances before vs after scaling', fontweight='bold')
-fig.tight_layout(); fig.savefig(FIG / 'prep_gene_variance.png', dpi=DPI); plt.show()
+fig.tight_layout(); fig.savefig(FIG / 'prep_gene_variance.png', dpi=DPI)
+plt.show()
+
+# %%
 
 # %% [markdown]
 # **How to read this graph.** Left: in log-normalised data, gene variances spread over a wide range, and a few genes are much more variable than the rest. Those are the informative ones Variance Threshold will keep. Right: after z-scoring, almost every gene sits at variance ≈ 1. A small tail falls below 1 because scanpy clipped extreme values. Ranking genes by variance here would be meaningless. **Order of operations matters.**
@@ -154,7 +158,7 @@ fig.tight_layout(); fig.savefig(FIG / 'prep_gene_variance.png', dpi=DPI); plt.sh
 splits = make_splits(ds.y, cfg)
 print(f"{len(splits)} train/test splits ({cfg['cv']['repeats']} repeats × {cfg['cv']['folds']} folds)")
 
-# Scaler + classifier are fit on each training fold only; results → outputs/tables/baseline_*.csv
+# Scaler + classifier are fit on each training fold only; results → outputs/<mode>/tables/baseline_*.csv
 base = run_baseline(ds, cfg, splits)
 base['summary'][['classifier', 'accuracy_mean', 'accuracy_std', 'macro_f1_mean', 'kappa_mean',
                  'auc_roc_mean', 'train_cpu_mean', 'pred_cpu_mean', 'total_wall_mean']]
@@ -249,7 +253,7 @@ add_legend(fig); fig.tight_layout(); fig.savefig(FIG / 'partA_pca_scree.png', dp
 
 # %%
 # Hyperparameter sensitivity: the same data with three kernel widths γ.
-gammas = [1 / (10 * p), 1 / p, 10 / p]
+gammas = [ 1 / (10 * p), 1 / p, 10 / p]
 fig, axes = plt.subplots(1, 3, figsize=(15, 4.6))
 for ax, g in zip(axes, gammas):
     Z, cpu, wall, _ = fit_2d('Kernel PCA', kpca_gamma=g)
@@ -389,7 +393,7 @@ add_legend(fig); fig.tight_layout(); fig.savefig(FIG / 'partA_umap_params.png', 
 # 1. Inductive methods: fit scaler → [PCA-50] → reducer on the **training fold**, then `transform` the test fold. Transductive methods: embed train + test together (marked **(T)**).
 # 2. Train k-NN, SVM and RF on the reduced coordinates.
 # 3. Record all metrics plus CPU time for reducer fit, reducer transform, classifier train and predict.
-# 4. On the first fold's test cells, measure **embedding quality** against the original scaled gene space:
+# 4. On the first fold's test cells, measure **embedding quality** against the original log-normalised gene space (`quality_reference` in the config). We do *not* use the z-scored genes as the reference: scaling gives all ~1,800 sparse genes equal weight, so neighbourhoods there are mostly noise (k-NN reaches only ~0.6 accuracy in that space) and every embedding would score close to a random one:
 #    * **Trustworthiness** (0–1): are the embedding's neighbours *real* neighbours? It penalises false neighbours, i.e. points brought close together that were far apart.
 #    * **Continuity** (0–1): are real neighbours *kept*? It is the same formula with the two spaces swapped, and penalises neighbours that were torn apart.
 #    * **k-NN preservation**: the fraction of each cell's 10 nearest neighbours that are still among its 10 nearest after reduction.
@@ -433,7 +437,7 @@ show('partA_quality_vs_dim.png')
 A['quality'].groupby(['method', 'dim'])[['trustworthiness', 'continuity', 'knn_preservation', 'ari', 'silhouette']].mean()
 
 # %% [markdown]
-# **How to read this graph.** Five quality scores (higher is better) vs output dimensions, one line per method. Trustworthiness and continuity usually rise with more dimensions: there is more room to keep neighbourhoods. Neighbourhood methods (t-SNE, SNE, UMAP) score well on trustworthiness *in 2D*, because that is what they optimise. PCA in 2D scores poorly on continuity, because it tears apart neighbourhoods that differ along PC3, PC4 and so on. k-NN preservation looks low in absolute terms because the reference space (1,800 scaled genes) is itself noisy. Compare methods *relative* to each other. ARI and silhouette tell you whether the embedding forms clean, label-matching clusters.
+# **How to read this graph.** Five quality scores (higher is better) vs output dimensions, one line per method. Trustworthiness and continuity usually rise with more dimensions: there is more room to keep neighbourhoods. Neighbourhood methods (t-SNE, SNE, UMAP) score well on trustworthiness *in 2D*, because that is what they optimise. PCA in 2D scores poorly on continuity, because it tears apart neighbourhoods that differ along PC3, PC4 and so on. k-NN preservation looks low in absolute terms: keeping the *exact* 10 nearest of 2,600 cells out of 1,800 noisy genes is very hard. Compare methods *relative* to each other. ARI and silhouette tell you whether the embedding forms clean, label-matching clusters.
 #
 # Note: these are computed on ~1/5 of the cells (the first fold's test set), capped at `quality_max_cells`.
 
@@ -752,4 +756,4 @@ print(f'Random labels → leaky accuracy = {leaky:.2f}   honest accuracy = {hone
 # | **Bootstrap** | Resampling the data with replacement to measure variability. |
 #
 # ---
-# All tables are in `outputs/tables/` and all figures in `outputs/figures/` (see `README.md` for a file-by-file description).
+# All tables are in `outputs/<mode>/tables/` and all figures in `outputs/<mode>/figures/` (`<mode>` = `fast` or `full`) (see `README.md` for a file-by-file description).

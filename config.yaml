@@ -41,6 +41,7 @@ partA:
   sne_max_dim: 50              # custom SNE skips dims above this
   quality_k: 10                # neighbourhood size for trustworthiness/continuity
   quality_max_cells: 1500      # cap for the O(n²) quality metrics
+  quality_reference: lognorm   # 'true' neighbours are measured in: lognorm (input genes) | scaled (z-scored genes)
 
 # --- Method hyper-parameters ------------------------------------------------
 hyper:
@@ -74,9 +75,9 @@ partC:
 
 # --- Output -----------------------------------------------------------------
 dpi: 150
-outputs:
-  tables: outputs/tables
-  figures: outputs/figures
+outputs:            # {mode} becomes 'full' or 'fast', so a fast run never overwrites full results
+  tables: outputs/{mode}/tables
+  figures: outputs/{mode}/figures
 
 # --- Fast mode overrides (python run_pipeline.py --fast) --------------------
 fast:
