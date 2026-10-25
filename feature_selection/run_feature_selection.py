@@ -16,7 +16,7 @@ Metrics:
     Accuracy, Precision, Recall, F1 Score, Training Time
 """
 
-import sys, time, warnings
+import sys, time, warnings, argparse
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -37,7 +37,7 @@ from sklearn.preprocessing import StandardScaler
 
 # Add parent directory to path to use existing src modules
 sys.path.append(str(Path(__file__).resolve().parent.parent))
-from src.data import benchmark_sample
+from src.data import benchmark_sample, load_fashion_mnist
 from src.config import load_config
 
 warnings.filterwarnings('ignore')
@@ -134,7 +134,7 @@ def select_fisher(X_train, X_test, y_train, k):
 def get_classifiers(seed):
     return {
         'KNN': KNeighborsClassifier(n_neighbors=7, weights='distance'),
-        'SVM': SVC(kernel='rbf', C=10, gamma='scale', random_state=seed),
+        'SVM': SVC(kernel='rbf', C=10, gamma='scale', random_state=seed, cache_size=1000),
         'Random Forest': RandomForestClassifier(
             n_estimators=100, random_state=seed, n_jobs=-1
         ),
@@ -144,12 +144,15 @@ def get_classifiers(seed):
 # ────────────────────── Evaluation Pipeline ───────────────────────────────
 
 def evaluate_pipeline(X_train, X_test, y_train, y_test, clf_name, clf):
-    """Train classifier and return metrics + training time."""
+    """Train classifier and return metrics + training & prediction time."""
     t0 = time.perf_counter()
     clf.fit(X_train, y_train)
     train_time = time.perf_counter() - t0
 
+    t1 = time.perf_counter()
     pred = clf.predict(X_test)
+    pred_time = time.perf_counter() - t1
+
     acc = accuracy_score(y_test, pred)
     prec = precision_score(y_test, pred, average='macro', zero_division=0)
     rec = recall_score(y_test, pred, average='macro', zero_division=0)
@@ -161,6 +164,8 @@ def evaluate_pipeline(X_train, X_test, y_train, y_test, clf_name, clf):
         'Recall': rec,
         'F1 Score': f1,
         'Training Time (s)': train_time,
+        'Prediction Time (s)': pred_time,
+        'Total Time (s)': train_time + pred_time,
     }
 
 
@@ -261,6 +266,21 @@ def plot_training_time(df, output_dir):
     plt.close()
 
 
+def plot_prediction_time(df, output_dir):
+    """Bar chart of prediction / inference time."""
+    fig, ax = plt.subplots(figsize=(14, 7))
+    sns.barplot(data=df, x='Feature Selection', y='Prediction Time (s)',
+                hue='Classifier', ax=ax, palette='viridis', edgecolor='black')
+    ax.set_title('Prediction Time by Feature Selection × Classifier on Core I5 11300h',
+                 fontsize=14, fontweight='bold')
+    ax.set_xlabel('')
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=15, ha='right')
+    ax.legend(title='Classifier')
+    plt.tight_layout()
+    plt.savefig(output_dir / 'fs_prediction_time.png', dpi=180)
+    plt.close()
+
+
 def plot_feature_scores(X_train, y_train, output_dir, top_n=30):
     """Visualize feature scores from ANOVA, MI, and Fisher side by side."""
     n_features = X_train.shape[1]
@@ -339,27 +359,48 @@ def plot_selected_pixels(X_train, y_train, output_dir, k=100):
 # ────────────────────────── Main ──────────────────────────────────────────
 
 def main():
+    parser = argparse.ArgumentParser(description="Feature Selection + Classification Benchmark")
+    parser.add_argument('--full', action='store_true', help="Use the FULL Fashion-MNIST dataset (60,000 train, 10,000 test)")
+    parser.add_argument('--output-dir', type=str, default=None, help="Custom output root directory")
+    args = parser.parse_args()
+
     root = Path(__file__).resolve().parent.parent
     cfg = load_config(root / 'config.yaml')
     seed = cfg['random_seed']
 
-    # Output directories
-    fig_dir = root / 'outputs' / 'figures'
-    tab_dir = root / 'outputs' / 'tables'
+    # Output directories: separate directory for full dataset vs sample benchmark
+    if args.output_dir:
+        base_out = Path(args.output_dir)
+    elif args.full:
+        base_out = root / 'outputs' / 'full_dataset'
+    else:
+        base_out = root / 'outputs'
+
+    fig_dir = base_out / 'figures'
+    tab_dir = base_out / 'tables'
     fig_dir.mkdir(parents=True, exist_ok=True)
     tab_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 70)
-    print("  Feature Selection + Classification Benchmark — Fashion-MNIST")
+    dataset_title = "FULL Dataset (60k/10k)" if args.full else "Balanced Sample Subset"
+    print(f"  Feature Selection + Classification Benchmark — {dataset_title}")
+    print(f"  Output directory: {base_out}")
     print("=" * 70)
 
     # Load data
     print("\n[1/5] Loading data...")
-    X, y, train_mask = benchmark_sample(
-        root / 'data', cfg['train_per_class'], cfg['test_per_class'], seed
-    )
-    X_train, y_train = X[train_mask], y[train_mask]
-    X_test, y_test = X[~train_mask], y[~train_mask]
+    if args.full:
+        Xtr, ytr, Xte, yte = load_fashion_mnist(root / 'data')
+        X_train = (Xtr / 255.0).astype(np.float32)
+        y_train = ytr
+        X_test = (Xte / 255.0).astype(np.float32)
+        y_test = yte
+    else:
+        X, y, train_mask = benchmark_sample(
+            root / 'data', cfg['train_per_class'], cfg['test_per_class'], seed
+        )
+        X_train, y_train = X[train_mask], y[train_mask]
+        X_test, y_test = X[~train_mask], y[~train_mask]
     print(f"      Train: {X_train.shape}, Test: {X_test.shape}")
 
     # Scale data (important for SVM)
@@ -395,14 +436,16 @@ def main():
             results.append(metrics)
             print(f"    {clf_name:15s}  Acc={metrics['Accuracy']:.4f}  "
                   f"F1={metrics['F1 Score']:.4f}  "
-                  f"Time={metrics['Training Time (s)']:.3f}s")
+                  f"TrainTime={metrics['Training Time (s)']:.3f}s  "
+                  f"PredTime={metrics['Prediction Time (s)']:.3f}s")
 
     df = pd.DataFrame(results)
 
     # Save results table
     print(f"\n[3/5] Saving results...")
-    df.to_csv(tab_dir / 'feature_selection_results.csv', index=False)
-    print(f"      Saved to {tab_dir / 'feature_selection_results.csv'}")
+    csv_path = tab_dir / 'feature_selection_results.csv'
+    df.to_csv(csv_path, index=False)
+    print(f"      Saved to {csv_path}")
 
     # Print summary table
     print("\n" + "=" * 70)
@@ -410,7 +453,7 @@ def main():
     print("=" * 70)
     display_cols = ['Feature Selection', 'Classifier', 'Num Features',
                     'Accuracy', 'Precision', 'Recall', 'F1 Score',
-                    'Training Time (s)']
+                    'Training Time (s)', 'Prediction Time (s)']
     print(df[display_cols].to_string(index=False))
 
     # Best combination
@@ -421,11 +464,16 @@ def main():
     # Generate visualizations
     print(f"\n[4/5] Generating plots...")
 
-    # Feature score visualizations (use unscaled data for interpretability)
-    plot_feature_scores(X_train_sc, y_train, fig_dir)
+    # Feature score visualizations
+    # If full dataset, compute scores on representative subset to avoid memory/time bottlenecks
+    score_train_sc = X_train_sc[:10000] if args.full else X_train_sc
+    score_y = y_train[:10000] if args.full else y_train
+    score_train_unscaled = X_train[:10000] if args.full else X_train
+
+    plot_feature_scores(score_train_sc, score_y, fig_dir)
     print("      ✓ Feature scores comparison")
 
-    plot_selected_pixels(X_train, y_train, fig_dir, k=k)
+    plot_selected_pixels(score_train_unscaled, score_y, fig_dir, k=k)
     print("      ✓ Selected pixel maps")
 
     # Heatmaps for each metric
@@ -442,11 +490,14 @@ def main():
     plot_radar(df, fig_dir)
     print("      ✓ Radar chart")
 
-    # Training time
+    # Training and Prediction times
     plot_training_time(df, fig_dir)
     print("      ✓ Training time chart")
 
-    print(f"\n[5/5] Done! All outputs in {fig_dir.parent}")
+    plot_prediction_time(df, fig_dir)
+    print("      ✓ Prediction time chart")
+
+    print(f"\n[5/5] Done! All outputs saved in {base_out}")
     print("=" * 70)
 
     return df
