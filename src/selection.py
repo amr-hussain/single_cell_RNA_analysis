@@ -6,6 +6,7 @@ data) so trying k = 10, 25, 50, ... reuses one scoring pass. The recorded
 selection time is still the full scoring cost, as if each k were run alone.
 """
 import hashlib
+import inspect
 import time
 import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -61,8 +62,13 @@ def _lasso(X, y, seed, cfg):
     # L1-penalised multinomial logistic regression on scaled genes; a gene's score is
     # its largest |coefficient| over classes. Most genes get exactly 0.
     Xs = StandardScaler().fit_transform(X)
-    lr = LogisticRegression(l1_ratio=1.0, solver='saga', C=cfg.get('lasso_C', 0.1),
-                            max_iter=300, tol=1e-3, random_state=seed)
+    # scikit-learn ≥ 1.8 deprecates `penalty` (L1 = l1_ratio=1); older versions need penalty='l1'.
+    if inspect.signature(LogisticRegression).parameters['penalty'].default == 'deprecated':
+        l1 = dict(l1_ratio=1.0)
+    else:
+        l1 = dict(penalty='l1')
+    lr = LogisticRegression(solver='saga', C=cfg.get('lasso_C', 0.1), max_iter=300, tol=1e-3,
+                            random_state=seed, **l1)
     lr.fit(Xs, y)
     return np.abs(lr.coef_).max(axis=0)
 

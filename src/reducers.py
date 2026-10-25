@@ -6,6 +6,7 @@ Each reducer is a sklearn Pipeline: scale+clip → (PCA-50 pre-step) → method.
 - Transductive methods (t-SNE, MDS, SNE) only place the points they were given,
   so train + test are embedded together. They are flagged everywhere.
 """
+import inspect
 import time
 import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -22,6 +23,11 @@ NEEDS_PCA_PRE = {'SNE', 't-SNE', 'MDS', 'Isomap', 'UMAP'}
 
 class SkipMethod(Exception):
     """Raised when a method/dimension combination is deliberately not run."""
+
+
+def accepts(cls, param):
+    """True if this scikit-learn version's estimator has the given constructor argument."""
+    return param in inspect.signature(cls.__init__).parameters
 
 
 def timed(fn, *args):
@@ -72,16 +78,20 @@ def _method(name, dim, cfg, seed, n_samples, n_features):
             method = 'exact'
         # perplexity must be < n_samples
         perp = min(h['tsne_perplexity'], (n_samples - 1) / 3)
-        return TSNE(n_components=dim, perplexity=perp, max_iter=h['tsne_iterations'], method=method,
-                    init='pca', learning_rate='auto', random_state=seed)
+        iters = 'max_iter' if accepts(TSNE, 'max_iter') else 'n_iter'   # renamed in scikit-learn 1.5
+        return TSNE(n_components=dim, perplexity=perp, method=method, init='pca', learning_rate='auto',
+                    random_state=seed, **{iters: h['tsne_iterations']})
     if name == 'SNE':
         if dim > a['sne_max_dim']:
             raise SkipMethod(f'SNE: dim={dim} > sne_max_dim={a["sne_max_dim"]}, skipped')
         perp = min(h['sne_perplexity'], (n_samples - 1) / 3)
         return SNEWrapper(dim, perp, h['sne_iterations'], h['sne_learning_rate'], seed)
     if name == 'MDS':
+        kw = {}
+        if accepts(MDS, 'init'):      # scikit-learn ≥ 1.8: start from classical MDS instead of random
+            kw['init'] = 'classical_mds'
         return MDS(n_components=dim, n_init=h['mds_n_init'], max_iter=h['mds_max_iter'],
-                   init='classical_mds', random_state=seed, normalized_stress='auto')
+                   random_state=seed, normalized_stress='auto', **kw)
     if name == 'Isomap':
         return Isomap(n_components=dim, n_neighbors=h['isomap_neighbors'])
     if name == 'UMAP':

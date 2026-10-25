@@ -1,7 +1,7 @@
 numpy>=1.26
 pandas>=2.1
 scipy>=1.11
-scikit-learn>=1.8   # MDS(init=...), LogisticRegression(l1_ratio=...) API
+scikit-learn>=1.4
 matplotlib>=3.8
 PyYAML>=6.0
 umap-learn>=0.5
