@@ -20,7 +20,7 @@ The dataset (~24 MB) is downloaded by scanpy on first use into `data/`.
 |---|---|---|
 | Read & run the tutorial | `jupyter notebook tutorial_scrna_dr_fs.ipynb` | ~6 min (FAST) |
 | Quick end-to-end check | `python run_pipeline.py --fast` | ~5 min |
-| Full study | `python run_pipeline.py` | ~1–2 h (exact t-SNE/SNE/MDS at high dims dominate) |
+| Full study | `python run_pipeline.py` | ~2–2½ h (SNE and exact t-SNE at 5–50 dims take ~6–9 min each; set `tsne_high_dim: skip` and `sne_max_dim: 10` to save ~40 min) |
 | Only some parts | `python run_pipeline.py --parts baseline,B` | – |
 | Notebook in full mode | `TUTORIAL_FAST=0 jupyter notebook …`, or set `FAST = False` in the first cell | – |
 
@@ -34,7 +34,7 @@ Everything is configurable:
 * `feature_source`: `lognorm_hvg` (log-normalised, unscaled HVGs; scaling happens inside each training fold) or `processed_X` (the pre-scaled matrix).
 * `subsample_cells`, `clip_value`, `seed`, `cv.folds`, `cv.repeats`.
 * `classifiers`: hyperparameters of k-NN, SVM and RF.
-* `partA`: `methods`, `dims`, `pca_pre_dims`, `tsne_high_dim` (`exact` | `skip`), quality-metric settings.
+* `partA`: `methods`, `dims`, `pca_pre_dims`, `tsne_high_dim` (`exact` | `skip`), quality-metric settings. `quality_reference` sets the space whose neighbours count as "true" for trustworthiness, continuity and k-NN preservation: `lognorm` (default, the input genes) or `scaled` (z-scored genes; there, neighbourhoods are mostly noise and every embedding scores close to random).
 * `hyper`: perplexities, iterations, `n_neighbors`, `min_dist`, Kernel PCA γ, …
 * `partB`: `methods`, `k_values`, Lasso C, top-N genes, bootstrap count for stability.
 * `partC`: which methods appear in the 2D grids.

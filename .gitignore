@@ -3,3 +3,4 @@ outputs/
 __pycache__/
 data/
 .ipynb_checkpoints/
+presentation/
